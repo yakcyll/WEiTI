@@ -5,6 +5,7 @@
 #include <climits>
 #include <windows.h>
 #include <queue>
+#include <cassert>
 
 #include "const.h"
 //#include "fifo_buffer.h"
@@ -12,11 +13,11 @@
 
 using namespace std;
 
-queue<int> integerBuffer[N+1];
+queue<int> integerBuffer[THENUMBERN+1];
 
-long intCount = 6*N;
+long intCount = ITEMLIMIT;
 long limitIn = 0;
-long limitOut = N;
+long limitOut = THENUMBERN;
 
 /*Mutex GTFOfromIn;
 Mutex GTFOfromOut;
@@ -28,14 +29,14 @@ Semaphore out(&limitOut);
 
 HANDLE GTFOfromIn;
 HANDLE GTFOfromOut;
-HANDLE GTFOfromBuffer[N+1];
+HANDLE GTFOfromBuffer[THENUMBERN+1];
 
 HANDLE in;
 HANDLE out;
 
-HANDLE moverProcesses[MoversNo];
-HANDLE giverProcesses[GiversNo];
-HANDLE takerProcesses[TakersNo];
+HANDLE moverProcesses[MOVERSNO];
+HANDLE giverProcesses[GIVERSNO];
+HANDLE takerProcesses[TAKERSNO];
 
 DWORD WINAPI givingProcess(LPVOID lpParam) {
 	
@@ -51,7 +52,7 @@ DWORD WINAPI givingProcess(LPVOID lpParam) {
 		WaitForSingleObject(GTFOfromBuffer[0], INFINITE);
 		integerBuffer[0].push(int(rand()));
 		intCount--;
-		cout << "Producing a number " << integerBuffer[0].back() << "; count: " << 6*N - intCount << endl;
+		cout << "Producing a number " << integerBuffer[0].back() << "; count: " << ITEMLIMIT - intCount << endl;
 		ReleaseMutex(GTFOfromBuffer[0]);
 		
 		ReleaseMutex(GTFOfromIn);
@@ -70,9 +71,17 @@ DWORD WINAPI takingProcess(LPVOID lpParam) {
 		WaitForSingleObject(GTFOfromOut, INFINITE);
 		cout << "Taker: Out lock acquired." << endl;
 
-		cout << "Consuming a number " << integerBuffer[N].front() << "; size: " << integerBuffer[N].size() << endl;
-		integerBuffer[N].pop();
+		WaitForSingleObject(GTFOfromBuffer[THENUMBERN], INFINITE);
+
+		if (integerBuffer[THENUMBERN].empty()) {
+			cout << "FATAL ERROR: Mutexes acquired before the conditions were met." << endl;
+			assert(0);
+		}
+		cout << "Consuming a number " << integerBuffer[THENUMBERN].front() << "; size: " << integerBuffer[THENUMBERN].size() << endl;
+		integerBuffer[THENUMBERN].pop();
 		intCount++;
+
+		ReleaseMutex(GTFOfromBuffer[THENUMBERN]);
 
 		WaitForSingleObject(GTFOfromIn, INFINITE);
 		cout << "Taker: In lock acquired." << endl;
@@ -94,6 +103,7 @@ DWORD WINAPI movingProcess(LPVOID lpParam) {
 
 	while(1) {
 		WaitForSingleObject(GTFOfromBuffer[i], INFINITE);
+		//WaitForSingleObject(GTFOfromBuffer[i+1], INFINITE);
 		//cout << "Mover [" << i << "] : Buffer lock acquired." << endl;
 
 		if(integerBuffer[i].size() > integerBuffer[i+1].size()) {
@@ -103,9 +113,10 @@ DWORD WINAPI movingProcess(LPVOID lpParam) {
 
 		}
 
+		//ReleaseMutex(GTFOfromBuffer[i+1]);
 		ReleaseMutex(GTFOfromBuffer[i]);
 
-		if (integerBuffer[N].size() >= N)
+		if ( i == THENUMBERN-1 && integerBuffer[THENUMBERN].size() >= THENUMBERN )
 			ReleaseSemaphore(out, 1, NULL);
 		//cout << "Mover [" << i << "]: Buffer lock released." << endl;
 	}
@@ -125,15 +136,15 @@ int main (int argc, char* argv[]) {
 
 	srand(time(NULL));
 
-	int moversParam[MoversNo];
-	for (int i = 0; i < MoversNo; i++)
-		moversParam[i] = (int)(i / (MoversNo / N));
+	int moversParam[MOVERSNO];
+	for (int i = 0; i < MOVERSNO; i++)
+		moversParam[i] = i % THENUMBERN;
 
 	cout << "Parameters initialized." << endl;
 
 	GTFOfromIn = CreateMutex(NULL, false, NULL);
 	GTFOfromOut = CreateMutex(NULL, false, NULL);
-	for (int i = 0; i < N+1; i++) {
+	for (int i = 0; i < THENUMBERN+1; i++) {
 
 		GTFOfromBuffer[i] = CreateMutex(NULL, false, NULL);
 
@@ -141,26 +152,26 @@ int main (int argc, char* argv[]) {
 
 	cout << "Mutexes created." << endl;
 
-	in = CreateSemaphore(NULL, 6*N, 6*N, NULL);
-	out = CreateSemaphore(NULL, 0, 6*N, NULL);
+	in = CreateSemaphore(NULL, ITEMLIMIT, ITEMLIMIT, NULL);
+	out = CreateSemaphore(NULL, 0, ITEMLIMIT, NULL);
 
 	cout << "Semaphores initialized." << endl;
 
-	for (int i = 0; i < TakersNo; i++) {
+	for (int i = 0; i < TAKERSNO; i++) {
 
 		takerProcesses[i] = CreateThread(NULL, 0, takingProcess, NULL, 0, &processID);
 		cout << "Taker process no. " << processID << " created." << endl;
 
 	}
 	
-	for (int i = 0; i < MoversNo; i++) {
+	for (int i = 0; i < MOVERSNO; i++) {
 
 		moverProcesses[i] = CreateThread(NULL, 0, movingProcess, &(moversParam[i]), 0, &processID);
 		cout << "Mover process no. " << processID << " created." << endl;
 
 	}
 
-	for (int i = 0; i < GiversNo; i++) {
+	for (int i = 0; i < GIVERSNO; i++) {
 
 		giverProcesses[i] = CreateThread(NULL, 0, givingProcess, NULL, 0,  &processID);
 		cout << "Giver process no. " << processID << " created." << endl;
@@ -192,16 +203,16 @@ int main (int argc, char* argv[]) {
 
 	}
 
-	for (int i = 0; i < GiversNo; i++)
+	for (int i = 0; i < GIVERSNO; i++)
 		CloseHandle(giverProcesses[i]);
 
-	for (int i = 0; i < MoversNo; i++)
+	for (int i = 0; i < MOVERSNO; i++)
 		CloseHandle(moverProcesses[i]);
 
-	for (int i = 0; i < TakersNo; i++)
+	for (int i = 0; i < TAKERSNO; i++)
 		CloseHandle(takerProcesses[i]);
 
-	for (int i = 0; i < N+1; i++)
+	for (int i = 0; i < THENUMBERN+1; i++)
 		CloseHandle(GTFOfromBuffer[i]);
 
 	CloseHandle(GTFOfromIn);

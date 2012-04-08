@@ -1,14 +1,16 @@
 #ifndef __CONST_H__
 #define __CONST_H__
 
-#define N			5
+#define THENUMBERN			10
 
-#define GiverId		0
-#define MoverId		1
-#define TakerId		2
+#define GIVERID				0
+#define MOVERID				1
+#define TAKERID				2
 
-#define GiversNo	1
-#define TakersNo	1
-#define MoversNo    5
+#define GIVERSNO			1
+#define TAKERSNO			5
+#define MOVERSNO			40
+
+#define ITEMLIMIT			2*MOVERSNO*THENUMBERN
 
 #endif
