@@ -29,7 +29,8 @@ Semaphore out(&limitOut);
 
 HANDLE GTFOfromIn;
 HANDLE GTFOfromOut;
-HANDLE GTFOfromBuffer[THENUMBERN+1];
+HANDLE GTFOfromBuffer;
+bool bufferBusy[THENUMBERN+1];
 
 HANDLE in;
 HANDLE out;
@@ -49,11 +50,15 @@ DWORD WINAPI givingProcess(LPVOID lpParam) {
 		WaitForSingleObject(GTFOfromIn, INFINITE);
 		cout << "Giver: In lock acquired." << endl;
 
-		WaitForSingleObject(GTFOfromBuffer[0], INFINITE);
+		WaitForSingleObject(GTFOfromBuffer, INFINITE);
+		bufferBusy[0] = true;
+		ReleaseMutex(GTFOfromBuffer);
 		integerBuffer[0].push(int(rand()));
 		intCount--;
 		cout << "Producing a number " << integerBuffer[0].back() << "; count: " << ITEMLIMIT - intCount << endl;
-		ReleaseMutex(GTFOfromBuffer[0]);
+		WaitForSingleObject(GTFOfromBuffer, INFINITE);
+		bufferBusy[0] = false;
+		ReleaseMutex(GTFOfromBuffer);
 		
 		ReleaseMutex(GTFOfromIn);
 		cout << "Giver: In lock released." << endl;
@@ -71,7 +76,9 @@ DWORD WINAPI takingProcess(LPVOID lpParam) {
 		WaitForSingleObject(GTFOfromOut, INFINITE);
 		cout << "Taker: Out lock acquired." << endl;
 
-		WaitForSingleObject(GTFOfromBuffer[THENUMBERN], INFINITE);
+		WaitForSingleObject(GTFOfromBuffer, INFINITE);
+		bufferBusy[THENUMBERN] = true;
+		ReleaseMutex(GTFOfromBuffer);
 
 		if (integerBuffer[THENUMBERN].empty()) {
 			cout << "FATAL ERROR: Mutexes acquired before the conditions were met." << endl;
@@ -81,7 +88,9 @@ DWORD WINAPI takingProcess(LPVOID lpParam) {
 		integerBuffer[THENUMBERN].pop();
 		intCount++;
 
-		ReleaseMutex(GTFOfromBuffer[THENUMBERN]);
+		WaitForSingleObject(GTFOfromBuffer, INFINITE);
+		bufferBusy[THENUMBERN] = false;
+		ReleaseMutex(GTFOfromBuffer);
 
 		WaitForSingleObject(GTFOfromIn, INFINITE);
 		cout << "Taker: In lock acquired." << endl;
@@ -102,19 +111,23 @@ DWORD WINAPI movingProcess(LPVOID lpParam) {
 	cout << "Mover [" << i << "] started." << endl;
 
 	while(1) {
-		WaitForSingleObject(GTFOfromBuffer[i], INFINITE);
+		WaitForSingleObject(GTFOfromBuffer, INFINITE);
 		//WaitForSingleObject(GTFOfromBuffer[i+1], INFINITE);
 		//cout << "Mover [" << i << "] : Buffer lock acquired." << endl;
 
-		if(integerBuffer[i].size() > integerBuffer[i+1].size()) {
+		if(!bufferBusy[i] && !bufferBusy[i+1] && integerBuffer[i].size() > integerBuffer[i+1].size()) {
 
+			bufferBusy[i] = bufferBusy[i+1] = true;
+			ReleaseMutex(GTFOfromBuffer);
 			integerBuffer[i+1].push(integerBuffer[i].front());
 			integerBuffer[i].pop();
+			WaitForSingleObject(GTFOfromBuffer, INFINITE);
+			bufferBusy[i] = bufferBusy[i+1] = false;
 
 		}
 
 		//ReleaseMutex(GTFOfromBuffer[i+1]);
-		ReleaseMutex(GTFOfromBuffer[i]);
+		ReleaseMutex(GTFOfromBuffer);
 
 		if ( i == THENUMBERN-1 && integerBuffer[THENUMBERN].size() >= THENUMBERN )
 			ReleaseSemaphore(out, 1, NULL);
@@ -144,9 +157,10 @@ int main (int argc, char* argv[]) {
 
 	GTFOfromIn = CreateMutex(NULL, false, NULL);
 	GTFOfromOut = CreateMutex(NULL, false, NULL);
+	GTFOfromBuffer = CreateMutex(NULL, false, NULL);
 	for (int i = 0; i < THENUMBERN+1; i++) {
 
-		GTFOfromBuffer[i] = CreateMutex(NULL, false, NULL);
+		bufferBusy[i] = false;
 
 	}
 
@@ -212,9 +226,9 @@ int main (int argc, char* argv[]) {
 	for (int i = 0; i < TAKERSNO; i++)
 		CloseHandle(takerProcesses[i]);
 
-	for (int i = 0; i < THENUMBERN+1; i++)
-		CloseHandle(GTFOfromBuffer[i]);
-
+	//for (int i = 0; i < THENUMBERN+1; i++)
+		
+	CloseHandle(GTFOfromBuffer);
 	CloseHandle(GTFOfromIn);
 	CloseHandle(GTFOfromOut);
 	CloseHandle(in);
